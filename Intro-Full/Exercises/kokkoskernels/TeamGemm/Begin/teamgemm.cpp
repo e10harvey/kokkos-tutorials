@@ -76,21 +76,19 @@ template <class TeamMemberType,
 	        class BTransType>
 struct TeamGemmFunctor {
   ScalarType alpha;
-  ViewType A; 
+  ViewType A;
   ViewType B;
   ScalarType beta;
   ViewType C;
-  const int team_size;
 
   TeamGemmFunctor(ScalarType alpha_,
-		              ViewType A_, ViewType B_,
-		              ScalarType beta_, ViewType C_, 
-                  int team_size_) : alpha(alpha_),
-						      A(A_),
-						      B(B_),
-						      beta(beta_),
-						      C(C_),
-						      team_size(team_size_)
+                  ViewType A_, ViewType B_,
+                  ScalarType beta_, ViewType C_) : 
+                    alpha(alpha_),
+                    A(A_),
+                    B(B_),
+                    beta(beta_),
+                    C(C_)
   {}
 
   KOKKOS_INLINE_FUNCTION
@@ -161,7 +159,7 @@ int main(int argc, char* argv[])
 
   C_dims.m = A_dims.m;
   C_dims.n = B_dims.n;
-  
+
   Kokkos::initialize(argc, argv);
 
   {
@@ -189,7 +187,7 @@ int main(int argc, char* argv[])
     using ExecutionSpaceType = DeviceType::execution_space;
     uint64_t seed = Kokkos::Impl::clock_tic();
     Kokkos::Random_XorShift64_Pool<ExecutionSpaceType> rand_pool(seed);
-    
+
     Kokkos::fill_random(A, rand_pool, Kokkos::rand<Kokkos::Random_XorShift64<ExecutionSpaceType>, ScalarType>::max());
     Kokkos::fill_random(B, rand_pool, Kokkos::rand<Kokkos::Random_XorShift64<ExecutionSpaceType>, ScalarType>::max());
     Kokkos::fill_random(C, rand_pool, Kokkos::rand<Kokkos::Random_XorShift64<ExecutionSpaceType>, ScalarType>::max());
@@ -208,7 +206,7 @@ int main(int argc, char* argv[])
     // EXERCISE hint: use Kokkos::TeamPolicy(index_type league_size, index_type team_size)
 
     // EXERCISE: Run Kokkos::parallel_for using the above policy and functor
-    
+
     // Wait for the device to return control
     Kokkos::fence();
 
@@ -217,7 +215,7 @@ int main(int argc, char* argv[])
     // Calculate time
     double time = 1.0 *    (end.tv_sec  - begin.tv_sec) +
                   1.0e-6 * (end.tv_usec - begin.tv_usec);
-    
+
     // Print results (problem size, time).
     printf( "    Results: ( C:%dx%dx%d, A:%dx%dx%d, B:%dx%dx%d, beta:%lf, alpha:%lf ), time( %g s )\n",
             N, C_dims.m, C_dims.n, N, A_dims.m, A_dims.n, N, B_dims.m, B_dims.n, beta, alpha, time);

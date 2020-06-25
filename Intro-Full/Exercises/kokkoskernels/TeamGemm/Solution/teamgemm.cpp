@@ -82,17 +82,15 @@ struct TeamGemmFunctor {
   ViewType B;
   ScalarType beta;
   ViewType C;
-  const int team_size;
 
   TeamGemmFunctor(ScalarType alpha_,
-		              ViewType A_, ViewType B_,
-		              ScalarType beta_, ViewType C_, 
-                  int team_size_) : alpha(alpha_),
-						      A(A_),
-						      B(B_),
-						      beta(beta_),
-						      C(C_),
-						      team_size(team_size_)
+                  ViewType A_, ViewType B_,
+                  ScalarType beta_, ViewType C_) :
+                    alpha(alpha_),
+                    A(A_),
+                    B(B_),
+                    beta(beta_),
+                    C(C_)
   {}
 
   KOKKOS_INLINE_FUNCTION
@@ -210,9 +208,9 @@ int main(int argc, char* argv[])
     using TeamMemberType = Kokkos::TeamPolicy<ExecutionSpaceType>::member_type;
     using ATransType = KokkosBatched::Trans::NoTranspose;
     using BTransType = KokkosBatched::Trans::NoTranspose;
-    using FunctorType = TeamGemmFunctor<TeamMemberType, ScalarType, ViewType, ATransType, BTransType>;
+    using TeamFunctorType = TeamGemmFunctor<TeamMemberType, ScalarType, ViewType, ATransType, BTransType>;
 
-    FunctorType functor(alpha, A, B, beta, C, team_size);
+    TeamFunctorType team_functor(alpha, A, B, beta, C);
     Kokkos::TeamPolicy<ExecutionSpaceType> policy(num_leagues, team_size);
 
     Kokkos::parallel_for(policy, functor);
@@ -223,7 +221,22 @@ int main(int argc, char* argv[])
     gettimeofday(&end, NULL);
 
     // Calculate time
-    double time = 1.0 *    (end.tv_sec  - begin.tv_sec) +
+    double team_time = 1.0 *    (end.tv_sec  - begin.tv_sec) +
+                  1.0e-6 * (end.tv_usec - begin.tv_usec);
+
+    gettimeofday(&begin, NULL);
+    Kokkos::parallel_for(Kokkos::RangePolicy<execution_space>(0, N), KOKKOS_LAMBDA (const int &i) {
+      // Fetch 2D sub-matrices for this league
+      auto a = Kokkos::subview(A, team_idx, Kokkos::ALL(), Kokkos::ALL());
+      auto b = Kokkos::subview(B, team_idx, Kokkos::ALL(), Kokkos::ALL());
+      auto c = Kokkos::subview(C, team_idx, Kokkos::ALL(), Kokkos::ALL());
+
+      
+    });
+    gettimeofday(&end, NULL);
+    
+    // Calculate time 
+    double serial_time = 1.0 *    (end.tv_sec  - begin.tv_sec) +
                   1.0e-6 * (end.tv_usec - begin.tv_usec);
     
     // Print results (problem size, time).

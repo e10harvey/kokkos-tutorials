@@ -57,6 +57,7 @@
 // EXERCISE hint: #include "KokkosBatched_Gemm_Decl.hpp" #include "KokkosBatched_Gemm_Team_Impl.hpp"
 #include "KokkosBatched_Gemm_Decl.hpp"
 #include "KokkosBatched_Gemm_Team_Impl.hpp"
+#include "KokkosBatched_Gemm_Serial_Impl.hpp"
 
 struct dims_t {
   int m, n;
@@ -110,7 +111,7 @@ struct TeamGemmFunctor {
                             ATransType,
                             BTransType,
                             KokkosBatched::Algo::Gemm::Unblocked>
-                  ::invoke(member, alpha, a, b, beta, c);
+      ::invoke(member, alpha, a, b, beta, c);
   }
 };
 
@@ -182,7 +183,7 @@ int main(int argc, char* argv[])
     using ViewType = Kokkos::View<ScalarType***, LayoutType, DeviceType>;
 
     // Timer products
-    struct timeval begin, end;
+    struct timeval begin, end, serial_start, serial_end;
 
     ScalarType alpha = (ScalarType) user_alpha;
     ScalarType beta = (ScalarType) user_beta;

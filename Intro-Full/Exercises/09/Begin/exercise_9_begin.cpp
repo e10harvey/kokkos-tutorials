@@ -1,35 +1,35 @@
 #include<Kokkos_Core.hpp>
 //EXERCISE: include the right header (later Kokkos will include this)
-//#include<simd.hpp>
+#include<simd.hpp>
 
 void test_simd(int N_in, int M, int R, double a) {
 
   //EXERCISE: get the right type here
-  //using simd_t = ...;
+  using simd_t = simd::simd<double,simd::simd_abi::native>;
 
   //EXERCISE: What will the N now be?
-  int N = N_in;
+  int N = N_in/simd_t::size();
 
   //EXERCISE: create SIMD Views instead
-  Kokkos::View<double**> data("D",N,M);
-  Kokkos::View<double*> results("R",N);
+  Kokkos::View<simd_t**> data("D",N,M);
+  Kokkos::View<simd_t*> results("R",N);
 
   // EXERCISE: create correctly a scalar view of results
   // For the final reduction we gonna need a scalar view of the data for now
   // Relying on knowing the data layout, we will add SIMD Layouts later
   // so that simple copy construction/assgnment would work
-  Kokkos::View<double*> results_scalar(results);
+  Kokkos::View<double*> results_scalar((double*)results.data(),N_in);
 
   // Lets fill the data
   // EXERCISE: match the type of the scalar being copied in
-  Kokkos::deep_copy(data,a);
-  Kokkos::deep_copy(results,0.0);
+  Kokkos::deep_copy(data,simd_t(a));
+  Kokkos::deep_copy(results,simd_t(0.0));
 
   Kokkos::Timer timer;
   for(int r = 0; r<R; r++) {
     Kokkos::parallel_for("Combine",data.extent(0), KOKKOS_LAMBDA(const int i) {
       //EXERCISE Use the correct type here
-      double tmp = 0.0;
+      simd_t tmp = 0.0;
       double b = a;
       for(int j=0; j<data.extent(1); j++) {
         tmp += b * data(i,j);

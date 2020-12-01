@@ -151,22 +151,39 @@ int main( int argc, char* argv[] )
     // Application: <y,Ax> = y^T*A*x
     double result = 0;
 
+    // Each team gets a 1D or 2D slice y,x, and A via it's league_rank, e
     Kokkos::parallel_reduce( team_policy( E, Kokkos::AUTO ), KOKKOS_LAMBDA ( const member_type &teamMember, double &update ) {
       const int e = teamMember.league_rank();
+      double tempN = 0;
 
       // EXERCISE: Replace reduction over N with TeamThread parallelism.
-      for ( int j = 0; j < N; j++ ) {
+      //for ( int j = 0; j < N; j++ ) {
+      // Each thread (or as many threads as possible) in the team gets a 1D slice of A via j
+      // If N is larger than the team size, this parallel_reduce will have to wait for an available execution slot
+      // to complete all N iterations.
+      Kokkos::parallel_reduce( Kokkos::TeamThreadRange( teamMember, N ), [&] ( const int j, double &innerUpdateN ) {
         double tempM = 0;
 
         // EXERCISE: Replace TeamThread parallelism with Vector parallelism.
-        Kokkos::parallel_reduce( Kokkos::TeamThreadRange( teamMember, M ), [&] ( const int i, double &innerUpdateM ) {
+	// Each vector lane (or as many vector lanes as possible) in the teams gets a scalar in A and a scalar in X to compute
+	// a produce to in the local innerUpdateM variable. These products are reduced into tempM.
+        Kokkos::parallel_reduce( Kokkos::ThreadVectorRange( teamMember, M ), [&] ( const int i, double &innerUpdateM ) {
           innerUpdateM += A( e, j, i ) * x( e, i );
-        }, tempM );
+	}, tempM );
 
-        // EXERCISE: Replace team_rank check with Kokkos::single construct.
-        if ( teamMember.team_rank() == 0 ) update += y( e, j ) * tempM;
-      }
-    }, result );
+	innerUpdateN += y(e, j) * tempM;
+
+     }, tempN);
+
+      // EXERCISE: Replace team_rank check with Kokkos::single construct.
+      //if ( teamMember.team_rank() == 0 ) update += y( e, j ) * tempM;
+      // Now one member per team accumulates tempM into update.
+      Kokkos::single( Kokkos::PerTeam( teamMember ), [&] () {
+	  update += tempN;
+	});
+
+	// Finally, the outermost parallel_reduce accumulates all local "updates" into result.
+      }, result );
 
     // Output result.
     if ( repeat == ( nrepeat - 1 ) ) {

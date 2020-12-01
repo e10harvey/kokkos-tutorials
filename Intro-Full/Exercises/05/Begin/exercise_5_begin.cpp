@@ -95,9 +95,9 @@ int main( int argc, char* argv[] )
   Kokkos::initialize( argc, argv );
   {
 
-  typedef Kokkos::DefaultExecutionSpace::array_layout  Layout;
-  // typedef Kokkos::LayoutLeft   Layout;
-  // typedef Kokkos::LayoutRight  Layout;
+    //typedef Kokkos::DefaultExecutionSpace::array_layout  Layout;
+  //typedef Kokkos::LayoutLeft   Layout;
+  typedef Kokkos::LayoutRight  Layout;
 
   typedef Kokkos::RangePolicy<> range_policy;
 
@@ -137,8 +137,8 @@ int main( int argc, char* argv[] )
 
   // EXERCISE: Use hierarchical parallel execution policy for calculation.
   // EXERCISE hints:
-  // typedef Kokkos::TeamPolicy<>               team_policy;
-  // typedef Kokkos::TeamPolicy<>::member_type  member_type;
+  typedef Kokkos::TeamPolicy<> team_policy;
+  typedef Kokkos::TeamPolicy<>::member_type  member_type;
 
   // Timer products.
   Kokkos::Timer timer;
@@ -148,17 +148,30 @@ int main( int argc, char* argv[] )
     double result = 0;
 
     // EXERCISE: Convert from range_policy to team_policy.
-    Kokkos::parallel_reduce( range_policy( 0, N ), KOKKOS_LAMBDA ( int j, double &update ) {
+    // We have N leagues with Kokkos::AUTO threads per team comming into this parallel_reduce
+    // AUTO is a runtime parameter and cannot see when the size of the inside loop is.
+    Kokkos::parallel_reduce("yAx", team_policy(N, Kokkos::AUTO), KOKKOS_LAMBDA ( const member_type teamMember, double &update ) {
+	// j hold each league rank
+	const int j = teamMember.league_rank();
+	double temp2 = 0;
       // EXERCISE: Convert to nested Kokkos::parallel_reduce.
       // EXERCISE hint: Kokkos::TeamThreadRange( ??? ) and [&].
-      double temp2 = 0;
+	// For all threads within this league, give each thread one index from 0 to M-1 and stop the product (for each thread) in innerUpdate.
+	// Then let Kokkos reduce innerUpdate safely into temp2.
+	Kokkos::parallel_reduce(Kokkos::TeamThreadRange(teamMember, M), [&] (const int i, double &innerUpdate) {
+	    // We get better bandwidth with LayoutRight since this innerloop is going over the columns of A.
+	    innerUpdate += A(j, i) * x(i);
+	  }, temp2);
 
-      for ( int i = 0; i < M; ++i ) {
-        temp2 += A( j, i ) * x( i );
-      }
+      // for ( int i = 0; i < M; ++i ) {
+      //   temp2 += A( j, i ) * x( i );
+      // }
 
       // EXERCISE: Only one team member update the result.
-      update += y( j ) * temp2;
+	// For the 0'th memver in this rank, accumulate the product into the local variable, update.
+	if (teamMember.team_rank() == 0)
+	  update += y(j) * temp2;
+      //update += y( j ) * temp2;
     }, result );
 
     // Output result.

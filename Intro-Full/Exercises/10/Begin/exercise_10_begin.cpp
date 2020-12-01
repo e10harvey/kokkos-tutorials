@@ -1,30 +1,30 @@
 #include<Kokkos_Core.hpp>
 //EXERCISE: include the right header (later Kokkos will include this)
-//#include<simd.hpp>
+#include<simd.hpp>
 
 void test_simd(int N_in, int M, int R, double a) {
 
   //EXERCISE: get the right type here for CUDA/Non-Cuda
-  //#ifdef KOKKOS_ENABLE_CUDA
-  //using simd_t = ...;
-  //#else
-  //using simd_t = ...;
-  //#endif
-  //using simd_storage_t = ...;
+  #ifdef KOKKOS_ENABLE_CUDA
+  using simd_t = simd::simd<double,simd::simd_abi::cuda_warp<32>>;
+  #else
+  using simd_t = simd::simd<double,simd::simd_abi::native>;
+  #endif
+  using simd_storage_t = simd_t::storage_type;
 
   //EXERCISE: What will the N now be?
-  int N = N_in;
+  int N = N_in/simd_t::size();
 
   //EXERCISE: create SIMD Views instead
-  Kokkos::View<double**> data("D",N,M);
-  Kokkos::View<double*> results("R",N);
+  Kokkos::View<simd_storage_t**> data("D",N,M);
+  Kokkos::View<simd_storage_t*> results("R",N);
 
   // EXERCISE: create correctly a scalar view of results and data
   // For the final reduction we gonna need a scalar view of the data for now
   // Relying on knowing the data layout, we will add SIMD Layouts later
   // so that simple copy construction/assgnment would work
-  Kokkos::View<double**> data_scalar(data);
-  Kokkos::View<double*> results_scalar(results);
+  Kokkos::View<double**> data_scalar((double*)data.data(),N_in,M);
+  Kokkos::View<double*> results_scalar((double*)results.data(),N_in);
 
   // Lets fill the data deep_copy into scalar types doesn't work correctly for cuda_warp right now
   Kokkos::deep_copy(data_scalar,a);
@@ -33,13 +33,20 @@ void test_simd(int N_in, int M, int R, double a) {
   Kokkos::Timer timer;
   for(int r = 0; r<R; r++) {
     //EXERCISE: use TeamPolicy here
-    Kokkos::parallel_for("Combine",data.extent(0), KOKKOS_LAMBDA(const int i) {
+    // TeamPolicy<>(league_size=N,team_size=1,vector_size)
+    // This TeamPolicy gives us a team_size of 1, so each league_rank is the thread id
+    Kokkos::parallel_for("Combine",Kokkos::TeamPolicy<>(data.extent(0),1,simd_t::size()),
+			 KOKKOS_LAMBDA(const Kokkos::TeamPolicy<>::member_type& team) {
       //EXERCISE Use the correct type here
-      double tmp = 0.0;
+      simd_t tmp = 0.0;
       double b = a;
+      
+      // i is the thread id s.t. every kokkos thread accumulate values into tmp
+      // on cuda, this means that every time tmp is accumulated into, all 32 vector lanes are reducing products into separate "elements" of tmp.
+      const int i = team.league_rank();
       for(int j=0; j<data.extent(1); j++) {
         //EXERCISE: add storage_type to temporary type conversion
-        tmp += b * data(i,j);
+        tmp += b * simd_t(data(i,j));
         b+=a+1.0*(j+1);
       }
       results(i) = tmp;

@@ -116,10 +116,12 @@ int main( int argc, char* argv[] )
   typedef Kokkos::View<double***, Layout>  ViewMatrixType;
 
   // EXERCISE: Define Scratch Memory View Type.
-  // typedef Kokkos::View<double*, ...., Kokkos::MemoryTraits<Kokkos::Unmanaged> > ScratchViewType;
+  typedef Kokkos::View<double*,
+		       Kokkos::DefaultExecutionSpace::scratch_memory_space,
+		       Kokkos::MemoryTraits<Kokkos::Unmanaged> > ScratchViewType;
 
   ViewVectorType y( "y", E, N );
-  ViewVectorType x( "x", E, M );
+5D  ViewVectorType x( "x", E, M );
   ViewMatrixType A( "A", E, N, M );
 
   // Create host mirrors of device views.
@@ -155,7 +157,7 @@ int main( int argc, char* argv[] )
   typedef Kokkos::TeamPolicy<>::member_type  member_type;
 
   // EXERCISE: Calculate bytes per team for scratch space.
-  // int scratch_size =  ScratchViewType:: ....
+  int scratch_size =  ScratchViewType::shmem_size(M);
 
   // Timer products.
   Kokkos::Timer timer;
@@ -165,27 +167,31 @@ int main( int argc, char* argv[] )
     double result = 0;
 
     // EXERCISE: Tell policy how much scratch space is needed.
-    Kokkos::parallel_reduce( team_policy( E, Kokkos::AUTO, 32 ), KOKKOS_LAMBDA ( const member_type &teamMember, double &update ) {
+    Kokkos::parallel_reduce( team_policy( E, Kokkos::AUTO, 32 ).set_scratch_size(0, Kokkos::PerTeam(scratch_size)), KOKKOS_LAMBDA ( const member_type &teamMember, double &update ) {
       const int e = teamMember.league_rank();
       double tempN = 0;
 
       // EXERCISE: Create a scratch view s_x for x.
-      // ....
+      ScratchViewType s_x( teamMember.team_scratch(0), M);
 
       if ( teamMember.team_rank() == 0 ) {
-        // EXERCISE: Fill scratch view s_x.
-        // ...
+	// once, for each team, copy the 1D slice into the scratch space
+	Kokkos::parallel_for(Kokkos::ThreadVectorRange(teamMember, M), [&] (const int i) {
+	    s_x(i) = x(e, i);
+	  });
       }
 
       // EXERCISE: Add a barrier.
-      // ...
+      // We need to ensure that a thread on a team doesn't use s_x before it's been populated.
+      teamMember.team_barrier();
 
       Kokkos::parallel_reduce( Kokkos::TeamThreadRange( teamMember, N ), [&] ( const int j, double &innerUpdateN ) {
         double tempM = 0;
 
+	// So, i guess this inner-most reduce is just a like a serial for-loop is there is only one vector lane per thread.
         Kokkos::parallel_reduce( Kokkos::ThreadVectorRange( teamMember, M ), [&] ( const int i, double &innerUpdateM ) {
           // EXERCISE: Use the scratch s_x instead of x.
-          innerUpdateM += A( e, j, i ) * x( e, i );
+          innerUpdateM += A( e, j, i ) * s_x( i );
         }, tempM );
 
         innerUpdateN += y( e, j ) * tempM;
